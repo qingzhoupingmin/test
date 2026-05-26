@@ -1,21 +1,19 @@
 """统一测试运行器 — 协调 Excel 解析、用例执行、报告输出"""
 import os
-import time
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from core.case_parser import CaseParser
 from core.excel_reader import ExcelReader
-from core.models import ApiCaseModel, TestResult, UiCaseModel
-from core.variable_manager import VariableManager
+from core.models import ApiCaseModel, TestResult
 
 
 class TestRunner:
     """统一测试运行器，支持：
     - 从 Excel 文件加载用例
     - 按模块/标签过滤
-    - API / UI 用例自动分发
+    - API 用例执行
     - 汇总生成测试报告数据结构
     """
 
@@ -39,14 +37,8 @@ class TestRunner:
     def load_cases_from_directory(
         self,
         directory: str,
-        case_type: str = "all",
     ) -> List[Any]:
-        """从目录递归加载所有 Excel 用例文件
-
-        Args:
-            directory: 用例目录路径
-            case_type: api / ui / all
-        """
+        """从目录递归加载所有 Excel 用例文件"""
         cases = []
         for root, dirs, files in os.walk(directory):
             for filename in files:
@@ -55,10 +47,6 @@ class TestRunner:
                 filepath = os.path.join(root, filename)
                 try:
                     file_cases = self.load_cases_from_excel(filepath)
-                    if case_type == "api":
-                        file_cases = [c for c in file_cases if isinstance(c, ApiCaseModel)]
-                    elif case_type == "ui":
-                        file_cases = [c for c in file_cases if isinstance(c, UiCaseModel)]
                     cases.extend(file_cases)
                 except Exception as e:
                     logger.warning("加载文件失败: {} | {}", filepath, e)
@@ -90,25 +78,9 @@ class TestRunner:
         dependency_sort: bool = True,
     ) -> List[TestResult]:
         """执行 API 用例列表"""
-        from api.api_engine import ApiTestEngine
         if not cases:
             return []
         results = api_engine.run_cases(cases, dependency_sort=dependency_sort)
-        self.results.extend(results)
-        return results
-
-    def run_ui_cases(
-        self,
-        cases: List[UiCaseModel],
-        driver,
-        screenshot_dir: str = "reports/screenshots",
-    ) -> List[TestResult]:
-        """执行 UI 用例列表"""
-        from ui.ui_engine import UiTestEngine
-        if not cases:
-            return []
-        engine = UiTestEngine(driver=driver, screenshot_dir=screenshot_dir)
-        results = engine.run_cases(cases)
         self.results.extend(results)
         return results
 

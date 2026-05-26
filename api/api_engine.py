@@ -100,6 +100,8 @@ class ApiTestEngine:
                 assertions=case.assertions,
                 response=response,
                 response_time_ms=elapsed_ms,
+                status_code=status_code,
+                extra_context={"status_code": status_code},
             )
 
         # ── 后置钩子 ──
@@ -188,9 +190,11 @@ class ApiTestEngine:
         return value
 
     def _resolve_string(self, text: str) -> str:
-        """替换字符串中的 {{var}} 占位符"""
+        """替换字符串中的 {{var}} 或 ${var()} 占位符"""
         def replacer(match):
-            var_name = match.group(1)
+            var_name = match.group(1) or match.group(2)
+            if var_name is None:
+                return match.group(0)
             # 先查变量管理器，再查内置变量
             val = self.vars.get(var_name)
             if val is not None:
@@ -202,7 +206,8 @@ class ApiTestEngine:
                 import uuid
                 return str(uuid.uuid4())
             return match.group(0)
-        return re.sub(r"\{\{(\w+)\}\}", replacer, text)
+        # 支持 {{var}} 和 ${var()} 两种语法
+        return re.sub(r"\{\{(\w+)\}\}|\$\{(\w+)\(\)\}", replacer, text)
 
     def _resolve_dict_variables(self, data: dict) -> dict:
         if not data:

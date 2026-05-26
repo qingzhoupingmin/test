@@ -11,13 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 def cmd_generate(args):
     """生成 Excel 测试用例模板"""
     from templates.template_generator import TemplateGenerator
-    if args.template == "api":
-        TemplateGenerator.generate_api_template(args.output)
-    elif args.template == "ui":
-        TemplateGenerator.generate_ui_template(args.output)
-    else:
-        TemplateGenerator.generate_api_template()
-        TemplateGenerator.generate_ui_template()
+    TemplateGenerator.generate_api_template(args.output)
     print("模板生成完成！")
 
 
@@ -31,12 +25,7 @@ def cmd_run(args):
     pytest_args = []
 
     # 测试目标
-    if args.type == "api":
-        pytest_args.append("test_cases/test_api_executor.py")
-    elif args.type == "ui":
-        pytest_args.append("test_cases/test_ui_executor.py")
-    else:
-        pytest_args.append("test_cases/")
+    pytest_args.append("test_cases/test_api_executor.py")
 
     # 标记过滤
     if args.marker:
@@ -69,21 +58,21 @@ def cmd_run(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="通用自动化测试框架",
+description="接口自动化测试框架",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
   # 生成 API 模板
-  python main.py generate --template api
+  python main.py generate
 
-  # 运行所有 API 测试
-  python main.py run --type api
+  # 运行 API 测试
+  python main.py run
 
   # 运行冒烟测试带 Allure 报告
-  python main.py run --type all --marker smoke --allure
+  python main.py run --marker smoke --allure
 
-  # 运行 UI 测试
-  python main.py run --type ui --verbose
+  # 运行测试带详细输出
+  python main.py run --verbose
         """
     )
 
@@ -91,13 +80,11 @@ def main():
 
     # generate 子命令
     gen_parser = subparsers.add_parser("generate", help="生成 Excel 测试用例模板")
-    gen_parser.add_argument("--template", choices=["api", "ui", "all"], default="all", help="模板类型")
     gen_parser.add_argument("--output", "-o", default=None, help="输出路径")
     gen_parser.set_defaults(func=cmd_generate)
 
     # run 子命令
     run_parser = subparsers.add_parser("run", help="运行测试")
-    run_parser.add_argument("--type", choices=["api", "ui", "all"], default="all", help="测试类型")
     run_parser.add_argument("--env", choices=["dev", "test", "prod"], default=None, help="测试环境")
     run_parser.add_argument("--marker", "-m", default=None, help="pytest 标记过滤 (如 smoke / p0)")
     run_parser.add_argument("--allure", action="store_true", help="生成 Allure 报告")

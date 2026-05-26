@@ -1,5 +1,4 @@
 """全局 pytest 配置 — session/function 级别的 fixture 管理"""
-import os
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ def pytest_configure(config):
     """pytest 启动时的全局配置"""
     # 标记注册
     config.addinivalue_line("markers", "api: 接口测试用例")
-    config.addinivalue_line("markers", "ui: UI 测试用例")
     config.addinivalue_line("markers", "smoke: 冒烟测试")
     config.addinivalue_line("markers", "regression: 回归测试")
     config.addinivalue_line("markers", "p0: P0 优先级")
@@ -48,14 +46,20 @@ def env_config(global_config):
 
 @pytest.fixture(scope="session")
 def db_helper(global_config):
-    """创建数据库连接（session 级复用）"""
+    """创建数据库连接（session 级复用），连接失败时返回 None"""
     from utils.db_helper import DBHelper
     db_config = global_config.get("database", {})
     if not db_config:
-        return None
-    helper = DBHelper(db_config)
-    yield helper
-    helper.close()
+        yield None
+        return
+    try:
+        helper = DBHelper(db_config)
+    except Exception as e:
+        logger.warning("数据库连接失败，跳过 DB 断言支持: {}", e)
+        yield None
+    else:
+        yield helper
+        helper.close()
 
 
 @pytest.fixture(scope="session")
@@ -95,16 +99,3 @@ def api_engine(api_session, db_helper, variable_manager, global_config):
 
     engine = ApiTestEngine(session=api_session, db_helper=db_helper)
     return engine
-
-
-@pytest.fixture(scope="function")
-def ui_driver(global_config):
-    """UI 浏览器驱动 fixture（每个用例独立）"""
-    from ui.browser_factory import BrowserFactory
-    browser_cfg = global_config.get("browser", {})
-    driver = BrowserFactory.create_selenium_driver(browser_cfg)
-    yield driver
-    try:
-        driver.quit()
-    except Exception:
-        pass

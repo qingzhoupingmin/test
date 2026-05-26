@@ -22,14 +22,19 @@ env/
 
 # 测试报告 & 数据
 reports/
+allure-report/
+allure-results/
 *.xlsx
 *.xls
 !templates/*.xlsx
-data/cases/
 
 # 日志
 logs/
 *.log
+
+# 缓存
+.pytest_cache/
+__pycache__/
 
 # 环境变量
 .env

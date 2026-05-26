@@ -96,18 +96,15 @@ class ConfigLoader:
 
     @classmethod
     def load_all(cls) -> Dict[str, Any]:
-        """加载完整配置：settings.yaml + 环境配置 + browser.yaml
+        """加载完整配置：settings.yaml + 环境配置
 
-        合并顺序：settings.yaml (基础) → browser.yaml → env/{active}.yaml (环境覆盖)
+        合并顺序：settings.yaml (基础) → env/{active}.yaml (环境覆盖)
         返回合并后的完整配置字典。
         """
         # 1. 基础设置
         base = cls.load("config/settings.yaml")
 
-        # 2. 浏览器配置
-        browser = cls.load("config/browser.yaml")
-
-        # 3. 环境配置
+        # 2. 环境配置
         active_env = os.environ.get("TEST_ENV") or base.get("active_env", "test")
         env_path = f"config/env/{active_env}.yaml"
         env_config = {}
@@ -116,8 +113,8 @@ class ConfigLoader:
         except FileNotFoundError:
             logger.error("环境配置文件不存在: {}，将使用基础配置", env_path)
 
-        # 合并顺序：base → browser → env（env 优先级最高）
-        merged = cls.merge(base, browser, env_config)
+        # 合并顺序：base → env（env 优先级最高）
+        merged = cls.merge(base, env_config)
 
         # 注入 active_env 和 env_config 供下游使用
         merged["active_env"] = active_env

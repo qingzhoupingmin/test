@@ -4,12 +4,11 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from core.excel_reader import ExcelReader
-from core.models import ApiCaseModel, AssertionItem, UiCaseModel, UiStep
+from core.models import ApiCaseModel, AssertionItem
 
 
 class CaseParser:
-    """将 Excel 原始行解析为 ApiCaseModel / UiCaseModel。
-    自动根据字段判断用例类型（API 有 method 字段，UI 有 steps 字段）。
+    """将 Excel 原始行解析为 ApiCaseModel。
     支持 params_file 数据驱动：模板行 + 外部参数文件 → 多条用例。
     """
 
@@ -59,13 +58,10 @@ class CaseParser:
     def _parse_single(cls, row: Dict[str, Any]) -> Optional[Any]:
         """解析单行用例（不含数据驱动）"""
         method = row.get("method", "")
-        steps = row.get("steps", "")
         if method:
             return cls.parse_api_case(row)
-        elif steps:
-            return cls.parse_ui_case(row)
         else:
-            logger.warning("无法识别用例类型，跳过: {}", row.get("case_id", "unknown"))
+            logger.warning("跳过非 API 用例 (缺少 method 字段): {}", row.get("case_id", "unknown"))
             return None
 
     @classmethod
@@ -118,44 +114,6 @@ class CaseParser:
             retry=retry,
         )
 
-    @classmethod
-    def parse_ui_case(cls, row: Dict[str, Any]) -> UiCaseModel:
-        """解析 UI 用例行"""
-        case_id = str(row.get("case_id", "")).strip()
-        case_name = str(row.get("case_name", "")).strip()
-        if not case_id:
-            raise ValueError(f"缺少 case_id: {row}")
-
-        module = str(row.get("module", ""))
-        page_url = str(row.get("page_url", ""))
-        pre_hook = str(row.get("pre_hook", "")).strip() or None
-        post_hook = str(row.get("post_hook", "")).strip() or None
-        skip = str(row.get("skip", "")).strip().upper() == "Y"
-        screenshot_on_fail = str(row.get("screenshot_on_fail", "Y")).strip().upper() != "N"
-
-        tags_raw = str(row.get("tags", "")).strip()
-        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
-
-        wait_after_ms = int(row.get("wait_after_ms", 0)) if row.get("wait_after_ms") else 0
-
-        steps = cls._parse_steps(row.get("steps"))
-        assertions = cls._parse_assertions(row.get("assertions"))
-
-        return UiCaseModel(
-            case_id=case_id,
-            case_name=case_name,
-            module=module,
-            tags=tags,
-            page_url=page_url,
-            steps=steps,
-            assertions=assertions,
-            wait_after_ms=wait_after_ms,
-            screenshot_on_fail=screenshot_on_fail,
-            skip=skip,
-            pre_hook=pre_hook,
-            post_hook=post_hook,
-        )
-
     # =================== 内部解析方法 ===================
 
     @classmethod
@@ -178,7 +136,6 @@ class CaseParser:
                 value=item.get("value"),
                 max_ms=item.get("max_ms"),
                 not_null=item.get("not_null", False),
-                target=item.get("target"),
                 comment=item.get("comment"),
                 query=item.get("query"),
             ))
@@ -204,25 +161,3 @@ class CaseParser:
                     result[k.strip()] = v.strip()
             return result
         return {}
-
-    @classmethod
-    def _parse_steps(cls, raw: Any) -> List[UiStep]:
-        """解析 UI 步骤 JSON 数组"""
-        data = ExcelReader.parse_json_field(raw)
-        if data is None:
-            return []
-        if not isinstance(data, list):
-            logger.warning("steps 格式不是 JSON 数组: {}", raw)
-            return []
-
-        steps = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            steps.append(UiStep(
-                action=item.get("action", ""),
-                selector=item.get("selector"),
-                value=str(item.get("value", "")) if item.get("value") is not None else None,
-                iframe=item.get("iframe"),
-            ))
-        return steps

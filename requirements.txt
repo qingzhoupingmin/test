@@ -1,6 +1,6 @@
 # ============================
 # 通用自动化测试框架 依赖清单
-# pytest + requests + playwright + yaml + allure
+# pytest + requests + yaml + allure
 # ============================
 
 # 测试核心
@@ -11,9 +11,6 @@ pytest-rerunfailures>=12.0   # 失败重跑
 # 接口测试
 requests>=2.31.0
 urllib3>=2.0.0
-
-# UI 测试
-playwright>=1.40.0
 
 # Excel 解析
 openpyxl>=3.1.0

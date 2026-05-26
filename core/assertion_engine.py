@@ -26,10 +26,13 @@ class AssertionEngine:
         response=None,
         response_time_ms: float = 0.0,
         extra_context: Dict[str, Any] = None,
+        status_code: int = None,
     ) -> bool:
         """执行断言列表，全部通过返回 True"""
         self._soft_failures.clear()
         ctx = extra_context or {}
+        if status_code is not None:
+            ctx["status_code"] = status_code
         all_passed = True
 
         for assertion in assertions:
@@ -58,7 +61,7 @@ class AssertionEngine:
 
         # ===== API 断言 =====
         if atype == "status_code":
-            return self._assert_status_code(response, assertion.value)
+            return self._assert_status_code(response, assertion.value, ctx)
 
         elif atype == "jsonpath":
             return self._assert_jsonpath(response, assertion.key, assertion.value)
@@ -92,8 +95,9 @@ class AssertionEngine:
 
     # ------------------- 具体断言实现 -------------------
 
-    def _assert_status_code(self, response, expected_value: Any) -> bool:
-        actual = response.status_code if response else 0
+    def _assert_status_code(self, response, expected_value: Any, ctx: Dict = None) -> bool:
+        ctx = ctx or {}
+        actual = ctx.get("status_code", response.status_code if response else 0)
         expected = int(expected_value)
         passed = actual == expected
         if not passed:
@@ -112,6 +116,9 @@ class AssertionEngine:
                 logger.error("jsonpath 未匹配到值: {}", key)
                 return False
             actual = matches[0]
+            # 期望值为空/None 时，仅验证 key 存在即可
+            if expected_value in (None, "", ''):
+                return True
             passed = self._values_match(actual, expected_value)
             if not passed:
                 logger.error("jsonpath 断言失败: key={}, 期望={}, 实际={}", key, expected_value, actual)
