@@ -10,11 +10,54 @@ from core.models import ApiCaseModel, AssertionItem, UiCaseModel, UiStep
 class CaseParser:
     """将 Excel 原始行解析为 ApiCaseModel / UiCaseModel。
     自动根据字段判断用例类型（API 有 method 字段，UI 有 steps 字段）。
+    支持 params_file 数据驱动：模板行 + 外部参数文件 → 多条用例。
     """
 
     @classmethod
     def parse(cls, row: Dict[str, Any]) -> Optional[Any]:
-        """自动识别类型并解析"""
+        """自动识别类型并解析（单条）"""
+        return cls._parse_single(row)
+
+    @classmethod
+    def parse_multi(cls, row: Dict[str, Any]) -> List[Any]:
+        """解析一行（可能含数据驱动），返回用例列表
+
+        如果 row 中存在 params_file 字段，则以此行为模板，
+        从参数文件加载数据批量生成用例；否则返回单条用例。
+        """
+        params_file = str(row.get("params_file", "")).strip()
+        if not params_file:
+            case = cls._parse_single(row)
+            return [case] if case else []
+
+        # 数据驱动模式：加载模板并批量生成
+        from core.data_driver import DataDriver
+        params_sheet = str(row.get("params_sheet", "")).strip() or None
+
+        if params_file.endswith(".csv"):
+            params_list = DataDriver.load_params_from_csv(params_file)
+        else:
+            params_list = DataDriver.load_params_from_excel(params_file, sheet_name=params_sheet)
+
+        if not params_list:
+            logger.warning("参数文件 {} 无数据，跳过数据驱动展开", params_file)
+            return []
+
+        generated_rows = DataDriver.generate_cases(row, params_list)
+        cases = []
+        for gen_row in generated_rows:
+            case = cls._parse_single(gen_row)
+            if case:
+                cases.append(case)
+
+        logger.info("数据驱动展开: {} → {} 条用例", row.get("case_id", "?"), len(cases))
+        return cases
+
+    # =================== 内部：单行解析 ===================
+
+    @classmethod
+    def _parse_single(cls, row: Dict[str, Any]) -> Optional[Any]:
+        """解析单行用例（不含数据驱动）"""
         method = row.get("method", "")
         steps = row.get("steps", "")
         if method:

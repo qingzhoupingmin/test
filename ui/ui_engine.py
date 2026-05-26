@@ -69,6 +69,7 @@ class UiTestEngine:
                                   passed=False, error_message=str(e))
 
         error_message = ""
+        assertions_passed = True
         step_count = len(case.steps)
 
         try:

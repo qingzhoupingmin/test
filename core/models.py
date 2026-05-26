@@ -89,3 +89,30 @@ class TestResult:
     response_body: Any = None
     extract_vars: Dict[str, Any] = field(default_factory=dict)
     screenshots: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转为字典，方便序列化"""
+        import json
+        return {
+            "case_id": self.case_id,
+            "case_name": self.case_name,
+            "passed": self.passed,
+            "error_message": self.error_message,
+            "response_time_ms": self.response_time_ms,
+            "status_code": self.status_code,
+            "response_body": _safe_serialize(self.response_body),
+            "extract_vars": _safe_serialize(self.extract_vars),
+            "screenshots": self.screenshots,
+        }
+
+
+def _safe_serialize(value: Any) -> Any:
+    """安全序列化：将不可 JSON 序列化的对象转为字符串"""
+    import json as _json
+    if value is None:
+        return None
+    try:
+        _json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return str(value)

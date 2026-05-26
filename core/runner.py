@@ -31,9 +31,8 @@ class TestRunner:
         rows = ExcelReader.read_sheet(file_path, sheet_name)
         cases = []
         for row in rows:
-            case = CaseParser.parse(row)
-            if case:
-                cases.append(case)
+            parsed = CaseParser.parse_multi(row)
+            cases.extend(parsed)
         logger.info("从 {} 加载了 {} 条用例", file_path, len(cases))
         return cases
 

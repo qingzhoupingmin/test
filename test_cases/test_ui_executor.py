@@ -47,9 +47,10 @@ class TestUiExecutor:
         rows = ExcelReader.read_sheet(ui_excel_file)
         ui_cases = []
         for row in rows:
-            case = CaseParser.parse(row)
-            if isinstance(case, UiCaseModel):
-                ui_cases.append(case)
+            parsed = CaseParser.parse_multi(row)
+            for case in parsed:
+                if isinstance(case, UiCaseModel):
+                    ui_cases.append(case)
 
         logger.info("文件 {} 包含 {} 条 UI 用例", ui_excel_file, len(ui_cases))
 

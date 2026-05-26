@@ -93,3 +93,36 @@ class RedisHelper:
         if self._client:
             self._client.close()
             logger.debug("Redis 连接已关闭")
+
+
+class DBHelper:
+    """统一数据库助手 — 封装 MySQL + Redis，conftest 通过此类注入"""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.mysql_cfg = config.get("mysql", {})
+        self.redis_cfg = config.get("redis", {})
+        self._mysql: Optional[MySQLHelper] = None
+        self._redis: Optional[RedisHelper] = None
+        if self.mysql_cfg:
+            self._mysql = MySQLHelper(self.mysql_cfg)
+            self._mysql.connect()
+            logger.info("DBHelper: MySQL 已连接")
+        if self.redis_cfg:
+            self._redis = RedisHelper(self.redis_cfg)
+            # RedisHelper 构造时即 ping 验证
+            logger.info("DBHelper: Redis 已连接")
+
+    @property
+    def mysql(self) -> Optional[MySQLHelper]:
+        return self._mysql
+
+    @property
+    def redis(self) -> Optional[RedisHelper]:
+        return self._redis
+
+    def close(self) -> None:
+        if self._mysql:
+            self._mysql.close()
+        if self._redis:
+            self._redis.close()
+        logger.info("DBHelper: 所有数据库连接已关闭")

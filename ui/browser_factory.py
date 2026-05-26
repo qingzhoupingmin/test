@@ -15,13 +15,24 @@ class BrowserFactory:
         """创建 Selenium WebDriver
 
         Args:
-            config: 浏览器配置字典，包含 type, headless, window_size 等
+            config: 浏览器配置字典，自动兼容 Playwright 和 Selenium 两种配置格式
         Returns:
             selenium.webdriver 实例
         """
+        # 兼容 Playwright 风格配置 → Selenium 风格
         browser_type = config.get("type", "chrome").lower()
+        # chromium → chrome 映射
+        if browser_type == "chromium":
+            browser_type = "chrome"
+
         headless = config.get("headless", False)
-        window_size = config.get("window_size", "1920x1080")
+
+        # 兼容 viewport (Playwright 格式) → window_size (Selenium 格式)
+        if "viewport" in config and "window_size" not in config:
+            vp = config["viewport"]
+            window_size = f'{vp.get("width", 1920)}x{vp.get("height", 1080)}'
+        else:
+            window_size = config.get("window_size", "1920x1080")
 
         if browser_type == "chrome":
             from selenium import webdriver

@@ -62,12 +62,14 @@ def db_helper(global_config):
 def api_session(global_config):
     """创建 API Session（session 级复用）"""
     from api.session_manager import SessionManager
-    api_cfg = global_config.get("api", {})
+    base_url = global_config.get("base_url", "")
+    timeout_cfg = global_config.get("timeout", {})
+    retry_cfg = global_config.get("retry", {})
     session = SessionManager(
-        base_url=api_cfg.get("base_url", ""),
-        timeout=api_cfg.get("timeout", 30),
-        retry=api_cfg.get("retry", 0),
-        retry_delay=api_cfg.get("retry_delay", 1.0),
+        base_url=base_url,
+        timeout=timeout_cfg.get("http_request", 30) if isinstance(timeout_cfg, dict) else 30,
+        retry=retry_cfg.get("max_attempts", 0) if isinstance(retry_cfg, dict) else 0,
+        retry_delay=retry_cfg.get("delay", 1000) / 1000.0 if isinstance(retry_cfg, dict) else 1.0,
     )
     yield session
     session.close()
