@@ -1,0 +1,43 @@
+# ============================
+# 通用自动化测试框架 依赖清单
+# pytest + requests + playwright + yaml + allure
+# ============================
+
+# 测试核心
+pytest>=7.4.0,<9.0.0
+pytest-xdist>=3.3.0          # 并行执行
+pytest-rerunfailures>=12.0   # 失败重跑
+
+# 接口测试
+requests>=2.31.0
+urllib3>=2.0.0
+
+# UI 测试
+playwright>=1.40.0
+
+# Excel 解析
+openpyxl>=3.1.0
+pandas>=2.0.0
+
+# YAML 配置
+pyyaml>=6.0.0
+
+# 报告
+allure-pytest>=2.13.0
+
+# 断言增强
+jsonpath-ng>=1.6.0
+jsonschema>=4.19.0
+
+# 日志
+loguru>=0.7.0
+
+# 数据库
+pymysql>=1.1.0
+redis>=5.0.0
+
+# 加密
+pycryptodome>=3.19.0
+
+# 工具
+python-dotenv>=1.0.0

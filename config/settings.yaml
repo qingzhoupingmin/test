@@ -1,0 +1,54 @@
+# ============================
+# 全局默认配置
+# ============================
+
+project:
+  name: "通用自动化测试框架"
+  version: "1.0.0"
+
+# 当前激活环境 (dev / test / prod)
+active_env: test
+
+# 默认超时配置
+timeout:
+  http_request: 30       # HTTP 请求超时（秒）
+  ui_action: 10000       # UI 操作超时（毫秒）
+  ui_navigation: 30000   # 页面导航超时（毫秒）
+
+# Excel 用例路径
+case_paths:
+  api: "data/api/"
+  ui: "data/ui/"
+  common: "data/common/"
+
+# 日志配置
+logging:
+  level: "INFO"          # DEBUG / INFO / WARNING / ERROR
+  rotation: "1 day"
+  retention: "15 days"
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}"
+
+# 报告配置
+allure:
+  result_dir: "reports/allure-results"
+  clean_results: true
+
+# 重试配置
+retry:
+  max_attempts: 2
+  delay: 1000            # 毫秒
+
+# 数据库默认配置（可被环境配置覆盖）
+database:
+  mysql:
+    host: "localhost"
+    port: 3306
+    user: "root"
+    password: ""
+    database: "test_db"
+    charset: "utf8mb4"
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+    db: 0
