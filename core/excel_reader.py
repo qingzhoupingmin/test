@@ -46,8 +46,13 @@ class ExcelReader:
         if len(rows) < 2:
             return []
 
-        # 第一行为表头，构建原始行数据列表
-        headers = [str(h).strip() if h else "" for h in rows[0]]
+        # 第一行为表头，构建原始行数据列表（空表头生成占位名）
+        headers = []
+        for h in rows[0]:
+            name = str(h).strip() if h else ""
+            if not name:
+                name = f"_col_{len(headers) + 1}"
+            headers.append(name)
         raw_rows = []
         for row in rows[1:]:
             row_dict = {}

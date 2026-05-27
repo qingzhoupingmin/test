@@ -79,9 +79,13 @@ class CaseParser:
         skip_raw = str(row.get("skip", "")).strip().upper()
         skip = skip_raw in ("Y", "YES", "TRUE", "是", "1")
 
-        # 标签
-        tags_raw = str(row.get("tags", "")).strip()
-        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+        # 标签（兼容 str 逗号分隔 和 list 两种格式）
+        tags_raw = row.get("tags", "")
+        if isinstance(tags_raw, list):
+            tags = [str(t).strip() for t in tags_raw if str(t).strip()]
+        else:
+            tags_str = str(tags_raw).strip()
+            tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
 
         # 解析 JSON 字段
         headers = parse_json_field(row.get("headers")) or {}
@@ -121,10 +125,23 @@ class CaseParser:
 
     @classmethod
     def _parse_assertions(cls, raw: Any) -> List[AssertionItem]:
-        """解析断言列表"""
+        """解析断言列表
+
+        支持三种输入格式：
+        1. JSON 数组: [{"type":"status_code","value":200}, ...]
+        2. 简写数字: 200 → 自动包装为 [{"type":"status_code","value":200}]
+        3. 简写字符串: "200" → 自动包装为 [{"type":"status_code","value":200}]
+        """
         data = parse_json_field(raw)
         if data is None:
             return []
+
+        # 简写格式：expected_status = 200 或 "200"
+        if isinstance(data, (int, float)):
+            return [AssertionItem(type="status_code", value=int(data), comment="expected_status")]
+        if isinstance(data, str) and data.strip().isdigit():
+            return [AssertionItem(type="status_code", value=int(data.strip()), comment="expected_status")]
+
         if not isinstance(data, list):
             logger.warning("断言格式不是 JSON 数组: {}", raw)
             return []

@@ -49,8 +49,11 @@ _DEFAULT_FIELD_ALIASES: Dict[str, str] = {
 # 核心字段列表：这些字段在 DataCleaner 中强制转为 str 类型
 _CORE_STRING_FIELDS = [
     "case_id", "case_name", "method", "url", "module",
-    "depends_on", "pre_hook", "post_hook", "skip", "tags",
+    "depends_on", "pre_hook", "post_hook", "skip",
 ]
+
+# skip 字段中表示"跳过用例"的值（与 CaseParser 保持一致）
+_SKIP_TRUE_VALUES = frozenset({"Y", "YES", "TRUE", "是", "1"})
 
 
 def _load_user_aliases() -> Dict[str, str]:
@@ -145,10 +148,10 @@ class DataCleaner:
             if str(case_id).startswith("#"):
                 continue
 
-            # 跳过 skip=Y 的行
+            # 跳过 skip=True 的行（与 CaseParser 保持一致的值集合）
             skip_val = row.get("skip", "")
-            if isinstance(skip_val, str) and skip_val.strip().upper() == "Y":
-                logger.debug("跳过用例: {} (skip=Y)", case_id)
+            if isinstance(skip_val, str) and skip_val.strip().upper() in _SKIP_TRUE_VALUES:
+                logger.debug("跳过用例: {} (skip={})", case_id, skip_val)
                 continue
 
             # 规范化字段类型和值
@@ -466,12 +469,14 @@ class FileReader:
         cls,
         dir_path: str,
         patterns: Optional[List[str]] = None,
+        raw_mode: bool = False,
     ) -> List[Dict[str, Any]]:
         """递归读取目录下所有支持的用例文件（单次 rglob 遍历，高性能）。
 
         Args:
             dir_path: 目录路径
             patterns: 文件匹配模式列表，默认支持 xlsx/xls/csv/json/yaml/yml
+            raw_mode: True 时 JSON/YAML 跳过类型规范化（适用于含模板变量的文件）
         Returns:
             所有用例行列表
         """
@@ -513,7 +518,7 @@ class FileReader:
                             case["_source_sheet"] = sheet_name
                         all_cases.extend(cases)
                 else:
-                    cases = cls.read_file(str(matched_file))
+                    cases = cls.read_file(str(matched_file), raw_mode=raw_mode)
                     for case in cases:
                         case["_source_file"] = str(matched_file)
                         case["_source_sheet"] = ""
