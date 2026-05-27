@@ -4,6 +4,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
+import allure
 import jsonpath_ng
 from loguru import logger
 
@@ -43,100 +44,124 @@ class ApiTestEngine:
             logger.info("跳过用例: {}", case.case_id)
             return TestResult(case_id=case.case_id, case_name=case.case_name, passed=True)
 
-        # ── 前置钩子 ──
-        HookManager.execute(case.pre_hook, {"case": case, "variables": self.vars.get_all()})
-
-        # ── 变量替换 ──
-        resolved_url = self._resolve_variables(case.url)
-        resolved_headers = self._resolve_dict_variables(case.headers)
-        resolved_params = self._resolve_dict_variables(case.params)
-        resolved_body = self._resolve_variables(case.body)
-        resolved_files = self._resolve_dict_variables(case.files)
-
-        # ── 构建文件上传参数 ──
-        upload_files = None
-        if resolved_files:
-            from utils.file_helper import FileHelper
-            upload_files = {}
-            for field_name, file_path in resolved_files.items():
-                upload_files.update(FileHelper.build_file_payload(field_name, str(file_path)))
-
-        # ── 执行请求 ──
-        start_time = time.time()
         response = None
         error_message = ""
         status_code = 0
+        elapsed_ms = 0.0
+        extract_vars = {}
+        assertions_passed = True
 
         try:
-            response = self.session.request(
-                method=case.method,
-                url=resolved_url,
-                params=resolved_params,
-                json=resolved_body if isinstance(resolved_body, dict) else None,
-                data=resolved_body if isinstance(resolved_body, str) else None,
-                headers=resolved_headers,
-                files=upload_files,
-            )
-            status_code = response.status_code
-        except Exception as e:
-            error_message = str(e)
-            logger.error("API 请求异常: {}", error_message)
+            # ── 前置钩子 ──
+            HookManager.execute(case.pre_hook, {"case": case, "variables": self.vars.get_all()})
 
-        elapsed_ms = (time.time() - start_time) * 1000
+            # ── 变量替换 ──
+            with allure.step("变量解析与替换"):
+                resolved_url = self._resolve_variables(case.url)
+                resolved_headers = self._resolve_dict_variables(case.headers)
+                resolved_params = self._resolve_dict_variables(case.params)
+                resolved_body = self._resolve_variables(case.body)
+                resolved_files = self._resolve_dict_variables(case.files)
+                if case.extract:
+                    allure.attach(
+                        json.dumps(case.extract, ensure_ascii=False, indent=2),
+                        name="提取规则",
+                        attachment_type=allure.attachment_type.JSON,
+                    )
 
-        # ── 响应变量提取 ──
-        extract_vars = {}
-        if response and response.ok:
-            try:
-                extract_vars = self._extract_variables(response, case.extract)
-                self.vars.set_bulk(extract_vars)
-            except Exception as e:
-                logger.warning("变量提取失败: {}", e)
+            # ── 构建文件上传参数 ──
+            upload_files = None
+            if resolved_files:
+                from utils.file_helper import FileHelper
+                upload_files = {}
+                for field_name, file_path in resolved_files.items():
+                    upload_files.update(FileHelper.build_file_payload(field_name, str(file_path)))
 
-        # ── 断言 ──
-        assertions_passed = True
-        if case.assertions:
-            assertions_passed = self.assertion_engine.run(
-                assertions=case.assertions,
-                response=response,
+            # ── 执行请求 ──
+            with allure.step(f"发送 {case.method} 请求"):
+                start_time = time.time()
+                try:
+                    response = self.session.request(
+                        method=case.method,
+                        url=resolved_url,
+                        params=resolved_params,
+                        json=resolved_body if isinstance(resolved_body, dict) else None,
+                        data=resolved_body if isinstance(resolved_body, str) else None,
+                        headers=resolved_headers,
+                        files=upload_files,
+                    )
+                    status_code = response.status_code
+                except Exception as e:
+                    error_message = str(e)
+                    logger.error("API 请求异常: {}", error_message)
+                elapsed_ms = (time.time() - start_time) * 1000
+
+            # ── 响应变量提取 ──
+            if response and response.ok:
+                with allure.step("响应变量提取"):
+                    try:
+                        extract_vars = self._extract_variables(response, case.extract)
+                        self.vars.set_bulk(extract_vars)
+                        if extract_vars:
+                            allure.attach(
+                                json.dumps(extract_vars, ensure_ascii=False, indent=2, default=str),
+                                name="提取结果",
+                                attachment_type=allure.attachment_type.JSON,
+                            )
+                    except Exception as e:
+                        logger.warning("变量提取失败: {}", e)
+
+            # ── 断言 ──
+            if case.assertions:
+                with allure.step(f"执行断言 ({len(case.assertions)} 条)"):
+                    assertions_passed = self.assertion_engine.run(
+                        assertions=case.assertions,
+                        response=response,
+                        response_time_ms=elapsed_ms,
+                        status_code=status_code,
+                        extra_context={"status_code": status_code},
+                    )
+
+            passed = not error_message and assertions_passed
+            if not passed and not error_message:
+                error_message = "断言失败"
+
+            result = TestResult(
+                case_id=case.case_id,
+                case_name=case.case_name,
+                passed=passed,
+                error_message=error_message,
                 response_time_ms=elapsed_ms,
                 status_code=status_code,
-                extra_context={"status_code": status_code},
+                response_body=response.json() if response and response.ok else None,
+                extract_vars=extract_vars,
             )
 
-        # ── 后置钩子 ──
-        HookManager.execute(
-            case.post_hook,
-            {
-                "case": case,
-                "variables": self.vars.get_all(),
-                "response": response,
-                "extract_vars": extract_vars,
-            },
-        )
+            logger.info(
+                "用例结果: {} | {} | {}ms",
+                "✓ 通过" if passed else "✗ 失败",
+                case.case_name,
+                f"{elapsed_ms:.0f}",
+            )
+            return result
 
-        passed = not error_message and assertions_passed
-        if not passed and not error_message:
-            error_message = "断言失败"
+        finally:
+            # ── 后置钩子（try-finally 保证异常时也会执行） ──
+            try:
+                HookManager.execute(
+                    case.post_hook,
+                    {
+                        "case": case,
+                        "variables": self.vars.get_all(),
+                        "response": response,
+                        "extract_vars": extract_vars,
+                    },
+                )
+            except Exception as e:
+                logger.warning("后置钩子执行失败: {}", e)
 
-        result = TestResult(
-            case_id=case.case_id,
-            case_name=case.case_name,
-            passed=passed,
-            error_message=error_message,
-            response_time_ms=elapsed_ms,
-            status_code=status_code,
-            response_body=response.json() if response and response.ok else None,
-            extract_vars=extract_vars,
-        )
-
-        logger.info(
-            "用例结果: {} | {} | {}ms",
-            "✓ 通过" if passed else "✗ 失败",
-            case.case_name,
-            f"{elapsed_ms:.0f}",
-        )
-        return result
+            # ── 用例结束：回收 CASE 变量 ──
+            self.vars.clear_case()
 
     def run_cases(self, cases: List[ApiCaseModel], 
                   dependency_sort: bool = True) -> List[TestResult]:
@@ -189,25 +214,93 @@ class ApiTestEngine:
             return [self._resolve_variables(item) for item in value]
         return value
 
+    # 内置函数注册表
+    _BUILTIN_FUNCTIONS = {
+        "timestamp": lambda: str(int(time.time())),
+        "timestamp_ms": lambda: str(int(time.time() * 1000)),
+        "uuid": lambda: __import__("uuid").uuid4().hex,
+        "random_string": lambda n=8: "".join(
+            __import__("random").choices(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", k=int(n)
+            )
+        ),
+        "random_int": lambda a=0, b=10000: str(__import__("random").randint(int(a), int(b))),
+        "date_now": lambda fmt="%Y-%m-%d": __import__("datetime").datetime.now().strftime(str(fmt)),
+        "phone": lambda: "1" + "".join(
+            __import__("random").choices("3456789", k=1)
+        ) + "".join(__import__("random").choices("0123456789", k=8)),
+    }
+
     def _resolve_string(self, text: str) -> str:
-        """替换字符串中的 {{var}} 或 ${var()} 占位符"""
-        def replacer(match):
-            var_name = match.group(1) or match.group(2)
-            if var_name is None:
+        """替换字符串中的占位符，支持三种语法：
+        - {{var}}          变量引用（CASE → SESSION → GLOBAL 查找）
+        - ${func()}        内置函数调用（可选参数，如 ${random_string(8)}）
+        - ${var:default}   带默认值的变量引用
+        """
+        # 第一步：匹配 ${func(args)} 和 ${var:default}
+        pattern_dynamic = re.compile(
+            r"\$\{(\w+)(?:\(([^)]*)\))?(?::([^}]*))?\}"
+        )
+
+        def replacer_dynamic(match):
+            name = match.group(1)      # 变量名或函数名
+            args = match.group(2)      # 函数参数（可选）
+            default = match.group(3)   # 默认值（可选）
+
+            # 情况1：内置函数调用（带参数或空括号）${func()} 或 ${func(args)}
+            if args is not None:
+                func = self._BUILTIN_FUNCTIONS.get(name)
+                if func:
+                    try:
+                        stripped = args.strip()
+                        if stripped == "":
+                            return func()
+                        params = [p.strip().strip("\"'") for p in stripped.split(",")]
+                        return func(*params)
+                    except (ValueError, TypeError) as e:
+                        logger.warning("内置函数 {} 调用失败: {}", name, e)
+                        return match.group(0)
+                # 不是内置函数，回退到变量查找
+                val = self.vars.get(name)
+                if val is not None:
+                    return str(val)
                 return match.group(0)
-            # 先查变量管理器，再查内置变量
+
+            # 情况2：带默认值的变量引用 ${var:default}
+            if default is not None:
+                val = self.vars.get(name)
+                if val is not None:
+                    return str(val)
+                return default
+
+            # 情况3：无参数内置函数调用 ${func()}
+            func = self._BUILTIN_FUNCTIONS.get(name)
+            if func:
+                try:
+                    return func()
+                except Exception as e:
+                    logger.warning("内置函数 {} 调用失败: {}", name, e)
+
+            # 情况4：普通变量引用 ${var}
+            val = self.vars.get(name)
+            if val is not None:
+                return str(val)
+            return match.group(0)
+
+        # 第二步：匹配 {{var}} 语法
+        pattern_curly = re.compile(r"\{\{(\w+)\}\}")
+
+        def replacer_curly(match):
+            var_name = match.group(1)
             val = self.vars.get(var_name)
             if val is not None:
                 return str(val)
-            # 内置变量
-            if var_name == "timestamp":
-                return str(int(time.time()))
-            if var_name == "uuid":
-                import uuid
-                return str(uuid.uuid4())
             return match.group(0)
-        # 支持 {{var}} 和 ${var()} 两种语法
-        return re.sub(r"\{\{(\w+)\}\}|\$\{(\w+)\(\)\}", replacer, text)
+
+        # 先处理 ${...} 再处理 {{...}}（避免嵌套冲突）
+        text = pattern_dynamic.sub(replacer_dynamic, text)
+        text = pattern_curly.sub(replacer_curly, text)
+        return text
 
     def _resolve_dict_variables(self, data: dict) -> dict:
         if not data:

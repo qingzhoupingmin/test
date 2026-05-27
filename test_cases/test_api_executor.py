@@ -7,39 +7,64 @@ import allure
 import pytest
 from loguru import logger
 
-from core.excel_reader import ExcelReader
+from core.file_reader import FileReader
 from core.case_parser import CaseParser
 from core.models import ApiCaseModel
 
 
+def _build_curl_command(case: ApiCaseModel) -> str:
+    """根据用例构建可复现的 curl 命令"""
+    method = case.method.upper()
+    parts = ["curl", "-X", method]
+
+    # headers
+    if case.headers:
+        for k, v in case.headers.items():
+            parts.append(f"-H '{k}: {v}'")
+
+    # body
+    if case.body:
+        if isinstance(case.body, dict):
+            parts.append(f"-d '{json.dumps(case.body, ensure_ascii=False)}'")
+        else:
+            parts.append(f"-d '{case.body}'")
+
+    # params → query string
+    url = case.url
+    if case.params:
+        from urllib.parse import urlencode
+        qs = urlencode(case.params, doseq=True)
+        url = f"{url}?{qs}" if "?" not in url else f"{url}&{qs}"
+
+    parts.append(f'"{url}"')
+    return " \\\n  ".join(parts)
+
+
 def _parse_all_api_cases() -> Tuple[List[Tuple[str, ApiCaseModel]], Dict[str, ApiCaseModel]]:
-    """解析所有 Excel 文件中的 API 用例，返回 (参数化列表, case_id→用例映射)"""
+    """解析所有支持的用例文件（Excel/CSV/JSON/YAML），返回 (参数化列表, case_id→用例映射)
+
+    使用 FileReader.read_directory 单次 rglob 遍历，避免手动遍历 6 种文件模式。
+    """
     all_cases: List[Tuple[str, ApiCaseModel]] = []
     case_map: Dict[str, ApiCaseModel] = {}
     base = Path("data/api")
     if base.exists():
-        for f in sorted(base.rglob("*")):
-            if f.suffix in (".xlsx", ".xls") and not f.name.startswith("~$"):
-                try:
-                    sheets = ExcelReader.read_all_sheets(str(f))
-                    all_rows = []
-                    for sheet_name, rows in sheets.items():
-                        for row in rows:
-                            row["_source_sheet"] = sheet_name
-                        all_rows.extend(rows)
-                    for row in all_rows:
-                        parsed = CaseParser.parse_multi(row)
-                        for case in parsed:
-                            if isinstance(case, ApiCaseModel):
-                                if case.skip:
-                                    logger.info("跳过用例: {} - {}", case.case_id, case.case_name)
-                                    continue
-                                if case.case_id in case_map:
-                                    logger.warning("重复 case_id: {}，后出现的将覆盖", case.case_id)
-                                all_cases.append((str(f), case))
-                                case_map[case.case_id] = case
-                except Exception as e:
-                    logger.warning("加载文件失败: {} | {}", f, e)
+        rows = FileReader.read_directory(str(base))
+        for row in rows:
+            source_file = row.get("_source_file", "")
+            try:
+                parsed = CaseParser.parse_multi(row)
+                for case in parsed:
+                    if isinstance(case, ApiCaseModel):
+                        if case.skip:
+                            logger.info("跳过用例: {} - {}", case.case_id, case.case_name)
+                            continue
+                        if case.case_id in case_map:
+                            logger.warning("重复 case_id: {}，后出现的将覆盖", case.case_id)
+                        all_cases.append((source_file, case))
+                        case_map[case.case_id] = case
+            except Exception as e:
+                logger.warning("解析用例行失败: source={} | {}", source_file, e)
     return all_cases, case_map
 
 
@@ -88,7 +113,7 @@ class TestApiExecutor:
     def test_api_case(self, api_case, excel_file, api_engine, global_config, variable_manager):
         """执行单条 API 用例，自动执行依赖链中的前置用例"""
         if api_case is None:
-            pytest.skip("没有可执行的 API 测试用例（data/api/ 下无 Excel 文件）")
+            pytest.skip("没有可执行的 API 测试用例（data/api/ 下无支持的用例文件）")
 
         # ── 注入配置变量 ──
         variable_manager.set("base_url", global_config.get("base_url", ""))
@@ -130,7 +155,20 @@ class TestApiExecutor:
         # Feature 分组（按模块分组，未设置则按 URL 路径第一段分组）
         feature_name = target_case.module or target_case.url.strip("/").split("/")[0].upper()
         allure.dynamic.feature(feature_name)
-        allure.dynamic.severity(allure.severity_level.NORMAL)
+
+        # 严重级别：按用例 tags 中的 p0/p1/p2/p3 映射
+        severity_map = {
+            "p0": allure.severity_level.BLOCKER,
+            "p1": allure.severity_level.CRITICAL,
+            "p2": allure.severity_level.NORMAL,
+            "p3": allure.severity_level.MINOR,
+        }
+        matched_severity = None
+        for tag in target_case.tags:
+            if tag.lower() in severity_map:
+                matched_severity = severity_map[tag.lower()]
+                break
+        allure.dynamic.severity(matched_severity or allure.severity_level.NORMAL)
 
         # 标签
         for tag in target_case.tags:
@@ -138,23 +176,29 @@ class TestApiExecutor:
         if target_case.depends_on:
             allure.dynamic.tag(f"依赖:{target_case.depends_on}")
 
-        # ── 附件：请求信息 ──
-        request_info = []
-        request_info.append(f"Method: {target_case.method}")
-        request_info.append(f"URL: {target_case.url}")
-        if target_case.headers:
-            request_info.append(f"Headers: {json.dumps(target_case.headers, ensure_ascii=False, indent=2)}")
-        if target_case.params:
-            request_info.append(f"Params: {json.dumps(target_case.params, ensure_ascii=False, indent=2)}")
-        if target_case.body:
-            request_info.append(f"Body: {json.dumps(target_case.body, ensure_ascii=False, indent=2)}")
-        if target_case.assertions:
-            req_info = [f"  {a.type}: {a.key}={a.value}" for a in target_case.assertions]
-            request_info.append(f"预期断言:\n" + "\n".join(req_info))
+        # ── 附件：cURL 命令（一键复现） ──
         allure.attach(
-            "\n".join(request_info),
-            name="请求详情",
+            _build_curl_command(target_case),
+            name="cURL 命令",
             attachment_type=allure.attachment_type.TEXT,
+        )
+
+        # ── 附件：请求信息（结构化 JSON） ──
+        request_payload = {
+            "method": target_case.method,
+            "url": target_case.url,
+            "headers": target_case.headers or {},
+            "params": target_case.params or {},
+            "body": target_case.body,
+            "expected_assertions": [
+                {"type": a.type, "key": a.key, "value": a.value}
+                for a in target_case.assertions
+            ],
+        }
+        allure.attach(
+            json.dumps(request_payload, ensure_ascii=False, indent=2, default=str),
+            name="请求详情 (JSON)",
+            attachment_type=allure.attachment_type.JSON,
         )
 
         # ── 附件：响应信息 ──
@@ -179,6 +223,25 @@ class TestApiExecutor:
                 attachment_type=allure.attachment_type.JSON,
             )
 
+        # ── 断言结果逐条展示 ──
+        with allure.step("断言结果"):
+            for ai, assertion in enumerate(target_case.assertions, 1):
+                a_desc = f"#{ai} [{assertion.type}] {assertion.key or assertion.comment or ''}"
+                if assertion.type == "status_code":
+                    a_desc += f" → 期望={assertion.value}  实际={result.status_code}"
+                elif assertion.type == "response_time":
+                    a_desc += f" → ≤{assertion.max_ms}ms  实际={result.response_time_ms:.0f}ms"
+                elif assertion.type == "db":
+                    a_desc += f" → SQL校验"
+                elif assertion.type == "soft":
+                    a_desc += f" → 软断言"
+                else:
+                    a_desc += f" → 期望={assertion.value}"
+                with allure.step(a_desc):
+                    pass
+
         # ── 断言 ──
         if not result.passed:
+            with allure.step(f"失败详情: {result.error_message}"):
+                pass
             pytest.fail(f"[{result.case_id}] {result.case_name} 失败: {result.error_message}")

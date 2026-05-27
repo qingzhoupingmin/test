@@ -1,17 +1,17 @@
-"""统一测试运行器 — 协调 Excel 解析、用例执行、报告输出"""
+"""统一测试运行器 — 协调多格式文件解析、用例执行、报告输出"""
 import os
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from core.case_parser import CaseParser
-from core.excel_reader import ExcelReader
+from core.file_reader import FileReader
 from core.models import ApiCaseModel, TestResult
 
 
 class TestRunner:
     """统一测试运行器，支持：
-    - 从 Excel 文件加载用例
+    - 从 Excel / CSV / JSON / YAML 文件加载用例
     - 按模块/标签过滤
     - API 用例执行
     - 汇总生成测试报告数据结构
@@ -20,13 +20,20 @@ class TestRunner:
     def __init__(self):
         self.results: List[TestResult] = []
 
-    def load_cases_from_excel(
+    def load_cases_from_file(
         self,
         file_path: str,
         sheet_name: Optional[str] = None,
     ) -> List[Any]:
-        """加载 Excel 文件中的所有用例并解析为模型对象"""
-        rows = ExcelReader.read_sheet(file_path, sheet_name)
+        """从文件加载用例（自动识别格式：xlsx/xls/csv/json/yaml/yml）
+
+        Args:
+            file_path: 用例文件路径
+            sheet_name: Sheet 名称（仅 Excel 格式有效）
+        Returns:
+            解析后的用例模型列表
+        """
+        rows = FileReader.read_file(file_path, sheet_name)
         cases = []
         for row in rows:
             parsed = CaseParser.parse_multi(row)
@@ -34,22 +41,32 @@ class TestRunner:
         logger.info("从 {} 加载了 {} 条用例", file_path, len(cases))
         return cases
 
+    def load_cases_from_excel(
+        self,
+        file_path: str,
+        sheet_name: Optional[str] = None,
+    ) -> List[Any]:
+        """加载 Excel 文件中的所有用例并解析为模型对象（向后兼容）"""
+        return self.load_cases_from_file(file_path, sheet_name)
+
     def load_cases_from_directory(
         self,
         directory: str,
+        patterns: Optional[List[str]] = None,
     ) -> List[Any]:
-        """从目录递归加载所有 Excel 用例文件"""
+        """从目录递归加载所有支持的用例文件
+
+        Args:
+            directory: 目录路径
+            patterns: 文件匹配模式列表，默认支持 xlsx/xls/csv/json/yaml/yml
+        Returns:
+            解析后的用例模型列表
+        """
+        rows = FileReader.read_directory(directory, patterns)
         cases = []
-        for root, dirs, files in os.walk(directory):
-            for filename in files:
-                if not filename.endswith((".xlsx", ".xls")):
-                    continue
-                filepath = os.path.join(root, filename)
-                try:
-                    file_cases = self.load_cases_from_excel(filepath)
-                    cases.extend(file_cases)
-                except Exception as e:
-                    logger.warning("加载文件失败: {} | {}", filepath, e)
+        for row in rows:
+            parsed = CaseParser.parse_multi(row)
+            cases.extend(parsed)
         logger.info("从目录 {} 共加载 {} 条用例", directory, len(cases))
         return cases
 

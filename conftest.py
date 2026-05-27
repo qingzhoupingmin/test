@@ -9,6 +9,37 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+def pytest_sessionstart(session):
+    """pytest session 开始时：生成 Allure environment.properties"""
+    try:
+        allure_dir = Path("allure-results")
+        allure_dir.mkdir(parents=True, exist_ok=True)
+        env_props = allure_dir / "environment.properties"
+
+        from utils.config_loader import ConfigLoader
+        config = ConfigLoader.load_all()
+        active_env = config.get("active_env", "dev")
+        env_cfg = config.get("env_config", {}).get(active_env, {})
+
+        lines = [
+            f"Environment={active_env}",
+            f"BaseURL={env_cfg.get('base_url', config.get('base_url', ''))}",
+            f"Python={sys.version.split()[0]}",
+            f"Platform={sys.platform}",
+        ]
+
+        # 写入 DB 信息（如有）
+        db_cfg = config.get("database", {})
+        if db_cfg:
+            lines.append(f"DB.Host={db_cfg.get('host', '')}")
+            lines.append(f"DB.Name={db_cfg.get('database', '')}")
+
+        env_props.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        logger.info("Allure environment.properties 已生成")
+    except Exception as e:
+        logger.warning("生成 Allure environment.properties 失败: {}", e)
+
+
 def pytest_configure(config):
     """pytest 启动时的全局配置"""
     # 标记注册
@@ -19,14 +50,10 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "p1: P1 优先级")
     config.addinivalue_line("markers", "p2: P2 优先级")
 
-    # 配置日志
-    logger.add(
-        "logs/test_{time:YYYY-MM-DD}.log",
-        rotation="500 MB",
-        retention="30 days",
-        level="DEBUG",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-    )
+    # 日志配置已统一由 utils/logger.py 的 LoggerSetup.setup() 管理
+    # 此处仅做标记注册，不再重复调用 logger.add()
+    from utils.logger import LoggerSetup
+    LoggerSetup.setup()
 
 
 @pytest.fixture(scope="session")

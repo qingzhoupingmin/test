@@ -1,10 +1,14 @@
-"""Excel 解析器 — 读取 .xlsx 文件，按 Sheet 返回 List[Dict]"""
-import json
+"""Excel 解析器 — 读取 .xlsx 文件，按 Sheet 返回 List[Dict]。
+
+行过滤、类型规范化等清洗逻辑统一委托给 DataCleaner。
+"""
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from openpyxl import load_workbook
+
+from core.file_reader import DataCleaner, parse_json_field
 
 
 class ExcelReader:
@@ -30,58 +34,35 @@ class ExcelReader:
 
         wb = load_workbook(file_path, data_only=True)
         sheet = wb[sheet_name] if sheet_name else wb.active
+        result = ExcelReader._read_sheet_from_wb(wb, sheet, file_path)
+        wb.close()
+        return result
 
-        logger.debug("读取 Excel: {} → Sheet: {}", file_path, sheet.title)
-
+    @staticmethod
+    def _read_sheet_from_wb(wb, sheet, file_path: str) -> List[Dict[str, Any]]:
+        """从已打开的 Workbook 和 Worksheet 对象读取用例行。"""
         rows = list(sheet.iter_rows(values_only=True))
+
         if len(rows) < 2:
             return []
 
-        # 第一行为表头
+        # 第一行为表头，构建原始行数据列表
         headers = [str(h).strip() if h else "" for h in rows[0]]
-
-        cases = []
-        for row_idx, row in enumerate(rows[1:], start=2):
+        raw_rows = []
+        for row in rows[1:]:
             row_dict = {}
             for idx, header in enumerate(headers):
-                value = row[idx] if idx < len(row) else None
-                row_dict[header] = value
+                row_dict[header] = row[idx] if idx < len(row) else None
+            raw_rows.append(row_dict)
 
-            # 跳过空行（case_id 为空）
-            case_id = row_dict.get("case_id")
-            if case_id is None or str(case_id).strip() == "":
-                continue
-
-            # 跳过注释行（以 # 开头）
-            if str(case_id).startswith("#"):
-                continue
-
-            # 跳过标记为 skip=Y 的行
-            skip_val = row_dict.get("skip", "")
-            if isinstance(skip_val, str) and skip_val.strip().upper() == "Y":
-                logger.debug("跳过用例: {} (skip=Y)", case_id)
-                continue
-
-            # 清理值：None 转空字符串，保留其他类型
-            cleaned = {}
-            for k, v in row_dict.items():
-                if v is None:
-                    cleaned[k] = ""
-                elif isinstance(v, float) and v == int(v):
-                    # 将 1.0 转为 1，避免数字字段解析问题
-                    cleaned[k] = int(v)
-                else:
-                    cleaned[k] = v
-
-            cases.append(cleaned)
-
-        wb.close()
-        logger.info("从 {} 读取到 {} 条用例", file_path, len(cases))
+        # 统一委托 DataCleaner 做清洗（过滤、规范化、别名映射）
+        cases = DataCleaner.clean_rows(raw_rows)
+        logger.debug("读取 Excel: {} → Sheet: {}", file_path, sheet.title)
         return cases
 
     @staticmethod
     def read_all_sheets(file_path: str) -> Dict[str, List[Dict[str, Any]]]:
-        """读取所有 Sheet，返回 {sheet_name: List[Dict]}"""
+        """读取所有 Sheet，返回 {sheet_name: List[Dict]}（只打开一次文件）。"""
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"Excel 文件不存在: {file_path}")
@@ -89,7 +70,10 @@ class ExcelReader:
         wb = load_workbook(file_path, data_only=True)
         result = {}
         for sheet_name in wb.sheetnames:
-            result[sheet_name] = ExcelReader.read_sheet(file_path, sheet_name)
+            sheet = wb[sheet_name]
+            cases = ExcelReader._read_sheet_from_wb(wb, sheet, file_path)
+            result[sheet_name] = cases
+            logger.info("从 {} 读取到 {} 条用例", file_path, len(cases))
         wb.close()
         return result
 
@@ -126,21 +110,3 @@ class ExcelReader:
 
         logger.info("从目录 {} 共读取到 {} 条用例", dir_path, len(all_cases))
         return all_cases
-
-    @staticmethod
-    def parse_json_field(raw: Any) -> Any:
-        """安全解析 JSON 字段，支持 str/dict/list 多种输入"""
-        if raw is None or raw == "":
-            return None
-        if isinstance(raw, (dict, list)):
-            return raw
-        if isinstance(raw, str):
-            raw = raw.strip()
-            if raw == "":
-                return None
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                logger.warning("JSON 解析失败，返回原始字符串: {}", raw[:100])
-                return raw
-        return raw

@@ -13,10 +13,18 @@ active_env: dev
 timeout:
   http_request: 30       # HTTP 请求超时（秒）
 
-# Excel 用例路径
+# 用例数据文件路径（支持 Excel / CSV / JSON / YAML）
 case_paths:
   api: "data/api/"
   common: "data/common/"
+  # 支持的格式（自动根据后缀识别）
+  supported_formats:
+    - xlsx
+    - xls
+    - csv
+    - json
+    - yaml
+    - yml
 
 # 日志配置
 logging:

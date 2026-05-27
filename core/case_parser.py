@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from core.excel_reader import ExcelReader
+from core.file_reader import FileReader, parse_json_field
 from core.models import ApiCaseModel, AssertionItem
 
 
@@ -33,10 +33,7 @@ class CaseParser:
         from core.data_driver import DataDriver
         params_sheet = str(row.get("params_sheet", "")).strip() or None
 
-        if params_file.endswith(".csv"):
-            params_list = DataDriver.load_params_from_csv(params_file)
-        else:
-            params_list = DataDriver.load_params_from_excel(params_file, sheet_name=params_sheet)
+        params_list = DataDriver.load_params_from_file(params_file, sheet_name=params_sheet)
 
         if not params_list:
             logger.warning("参数文件 {} 无数据，跳过数据驱动展开", params_file)
@@ -86,12 +83,12 @@ class CaseParser:
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
 
         # 解析 JSON 字段
-        headers = ExcelReader.parse_json_field(row.get("headers")) or {}
-        params = ExcelReader.parse_json_field(row.get("params")) or {}
-        body = ExcelReader.parse_json_field(row.get("body"))
+        headers = parse_json_field(row.get("headers")) or {}
+        params = parse_json_field(row.get("params")) or {}
+        body = parse_json_field(row.get("body"))
         assertions = cls._parse_assertions(row.get("assertions"))
         extract = cls._parse_extract(row.get("extract"))
-        files = ExcelReader.parse_json_field(row.get("files")) or {}
+        files = parse_json_field(row.get("files")) or {}
         retry = int(row.get("retry", 0)) if row.get("retry") else 0
 
         return ApiCaseModel(
@@ -119,7 +116,7 @@ class CaseParser:
     @classmethod
     def _parse_assertions(cls, raw: Any) -> List[AssertionItem]:
         """解析断言列表"""
-        data = ExcelReader.parse_json_field(raw)
+        data = parse_json_field(raw)
         if data is None:
             return []
         if not isinstance(data, list):

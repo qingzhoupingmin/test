@@ -1,0 +1,37 @@
+[
+  {
+    "name": "断言失败 — 预期值与实际不符",
+    "messageRegex": ".*断言失败.*",
+    "matchedStatuses": ["failed"],
+    "traceRegex": ".*AssertionError.*"
+  },
+  {
+    "name": "网络/连接异常",
+    "messageRegex": ".*(ConnectionError|Timeout|RemoteDisconnected|MaxRetryError).*",
+    "matchedStatuses": ["broken", "failed"]
+  },
+  {
+    "name": "HTTP 状态码错误 (4xx)",
+    "messageRegex": ".*status_code.*期望=4.*|.*404.*|.*403.*|.*401.*",
+    "matchedStatuses": ["failed"]
+  },
+  {
+    "name": "HTTP 状态码错误 (5xx)",
+    "messageRegex": ".*status_code.*期望=5.*|.*500.*|.*502.*|.*503.*",
+    "matchedStatuses": ["failed"]
+  },
+  {
+    "name": "依赖用例失败 — 前置用例未通过",
+    "messageRegex": ".*依赖用例.*失败.*",
+    "matchedStatuses": ["broken", "failed", "skipped"]
+  },
+  {
+    "name": "变量/数据问题 — 提取或替换失败",
+    "messageRegex": ".*(变量|jsonpath|提取).*(?:失败|错误|未匹配).*",
+    "matchedStatuses": ["failed", "broken"]
+  },
+  {
+    "name": "未知错误 — 需人工排查",
+    "matchedStatuses": ["failed", "broken"]
+  }
+]

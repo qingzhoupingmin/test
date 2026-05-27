@@ -4,26 +4,41 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from core.file_reader import FileReader
+
 
 class DataDriver:
-    """从 Excel / CSV 数据文件加载参数化数据，与用例模板合并生成批量测试用例"""
+    """从 Excel / CSV / JSON / YAML 数据文件加载参数化数据，与用例模板合并生成批量测试用例"""
+
+    @staticmethod
+    def load_params_from_file(
+        file_path: str,
+        sheet_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """从任意支持格式加载参数化数据（自动识别文件类型）
+
+        Args:
+            file_path: 参数文件路径（支持 xlsx/xls/csv/json/yaml/yml）
+            sheet_name: Sheet 名称（仅 Excel 格式有效）
+        Returns:
+            参数数据列表
+        """
+        return FileReader.read_file(file_path, sheet_name)
 
     @staticmethod
     def load_params_from_excel(
         file_path: str,
         sheet_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """加载参数化数据，依赖 ExcelReader"""
+        """加载 Excel 参数化数据（向后兼容）"""
         from core.excel_reader import ExcelReader
         return ExcelReader.read_sheet(file_path, sheet_name)
 
     @staticmethod
     def load_params_from_csv(file_path: str) -> List[Dict[str, Any]]:
-        """从 CSV 加载参数化数据"""
-        import csv
-        with open(file_path, "r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            return [dict(row) for row in reader]
+        """从 CSV 加载参数化数据（向后兼容）"""
+        from core.file_reader import CsvReader
+        return CsvReader.read_file(file_path)
 
     @classmethod
     def generate_cases(

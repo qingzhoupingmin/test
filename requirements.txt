@@ -28,6 +28,7 @@ jsonschema>=4.19.0
 
 # 日志
 loguru>=0.7.0
+PyYAML>=6.0
 
 # 数据库
 pymysql>=1.1.0

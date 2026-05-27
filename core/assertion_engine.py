@@ -206,7 +206,6 @@ class AssertionEngine:
             value=assertion.value,
             max_ms=assertion.max_ms,
             not_null=assertion.not_null,
-            target=assertion.target,
             comment=assertion.comment,
             query=assertion.query,
         )
