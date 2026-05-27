@@ -95,13 +95,13 @@ def pytest_generate_tests(metafunc):
         if _ALL_CASES:
             ids = [f"{c.case_id}-{c.case_name}" for _, c in _ALL_CASES]
             metafunc.parametrize(
-                "excel_file,api_case",
+                "source_file,api_case",
                 _ALL_CASES,
                 ids=ids,
             )
         else:
             metafunc.parametrize(
-                "excel_file,api_case",
+                "source_file,api_case",
                 [(None, None)],
                 ids=["no-cases"],
             )
@@ -110,7 +110,7 @@ def pytest_generate_tests(metafunc):
 class TestApiExecutor:
     """API 测试执行器 — 每条用例独立测试"""
 
-    def test_api_case(self, api_case, excel_file, api_engine, global_config, variable_manager):
+    def test_api_case(self, api_case, source_file, api_engine, global_config, variable_manager):
         """执行单条 API 用例，自动执行依赖链中的前置用例"""
         if api_case is None:
             pytest.skip("没有可执行的 API 测试用例（data/api/ 下无支持的用例文件）")
@@ -148,7 +148,7 @@ class TestApiExecutor:
             f"method: {target_case.method}",
             f"url: {target_case.url}",
             f"module: {target_case.module or '(未设置)'}",
-            f"source: {excel_file}",
+            f"source: {source_file}",
         ]
         allure.dynamic.description("\n".join(desc_lines))
 

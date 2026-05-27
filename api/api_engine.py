@@ -11,7 +11,6 @@ from loguru import logger
 from api.session_manager import SessionManager
 from core.assertion_engine import AssertionEngine
 from core.case_parser import CaseParser
-from core.excel_reader import ExcelReader
 from core.hook_manager import HookManager
 from core.models import ApiCaseModel, TestResult
 from core.variable_manager import VariableManager

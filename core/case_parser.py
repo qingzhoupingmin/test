@@ -1,4 +1,4 @@
-"""用例解析器 — 将 Excel 原始行数据解析为标准化的 CaseModel 对象"""
+"""用例解析器 — 将多格式原始行数据（Excel/CSV/JSON/YAML）解析为标准化的 CaseModel 对象"""
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -8,7 +8,7 @@ from core.models import ApiCaseModel, AssertionItem
 
 
 class CaseParser:
-    """将 Excel 原始行解析为 ApiCaseModel。
+    """将多格式原始行解析为 ApiCaseModel。
     支持 params_file 数据驱动：模板行 + 外部参数文件 → 多条用例。
     """
 
@@ -76,7 +76,8 @@ class CaseParser:
         depends_on = str(row.get("depends_on", "")).strip() or None
         pre_hook = str(row.get("pre_hook", "")).strip() or None
         post_hook = str(row.get("post_hook", "")).strip() or None
-        skip = str(row.get("skip", "")).strip().upper() == "Y"
+        skip_raw = str(row.get("skip", "")).strip().upper()
+        skip = skip_raw in ("Y", "YES", "TRUE", "是", "1")
 
         # 标签
         tags_raw = str(row.get("tags", "")).strip()
@@ -90,18 +91,22 @@ class CaseParser:
         extract = cls._parse_extract(row.get("extract"))
         files = parse_json_field(row.get("files")) or {}
         retry = int(row.get("retry", 0)) if row.get("retry") else 0
+        payload_type = str(row.get("payload_type", "")).strip() or None
+        priority = str(row.get("priority", "")).strip() or None
 
-        return ApiCaseModel(
+        case = ApiCaseModel(
             case_id=case_id,
             case_name=case_name,
             module=module,
             tags=tags,
+            priority=priority,
             method=method,
             url=url,
             headers=headers,
             params=params,
             body=body,
             files=files,
+            payload_type=payload_type,
             extract=extract,
             assertions=assertions,
             depends_on=depends_on,
@@ -110,6 +115,7 @@ class CaseParser:
             skip=skip,
             retry=retry,
         )
+        return case
 
     # =================== 内部解析方法 ===================
 
@@ -150,6 +156,15 @@ class CaseParser:
         if isinstance(raw, dict):
             return {str(k): str(v) for k, v in raw.items()}
         if isinstance(raw, str):
+            # 先尝试 JSON 解析
+            try:
+                import json
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return {str(k): str(v) for k, v in parsed.items()}
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # 再尝试简写格式
             result = {}
             pairs = [p.strip() for p in raw.split(";") if p.strip()]
             for pair in pairs:

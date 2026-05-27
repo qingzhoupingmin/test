@@ -23,6 +23,7 @@ class ApiCaseModel:
     case_name: str
     module: str = ""
     tags: List[str] = field(default_factory=list)
+    priority: Optional[str] = None         # P0/P1/P2/P3 优先级
     # 请求
     method: str = "GET"                    # GET / POST / PUT / DELETE / PATCH
     url: str = ""
@@ -30,6 +31,7 @@ class ApiCaseModel:
     params: Dict[str, Any] = field(default_factory=dict)
     body: Optional[Any] = None             # dict（JSON 请求体） 或 str（form）
     files: Dict[str, str] = field(default_factory=dict)  # 上传文件路径
+    payload_type: Optional[str] = None     # JSON / FORM / XML / MULTIPART
     # 响应处理
     extract: Dict[str, str] = field(default_factory=dict)  # {变量名: jsonpath}
     # 断言

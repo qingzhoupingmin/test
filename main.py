@@ -9,9 +9,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 
 def cmd_generate(args):
-    """生成 Excel 测试用例模板"""
+    """生成多格式测试用例模板"""
     from templates.template_generator import TemplateGenerator
-    TemplateGenerator.generate_api_template(args.output)
+    TemplateGenerator.generate_api_template(args.output, fmt=getattr(args, 'format', 'xlsx'))
     print("模板生成完成！")
 
 
@@ -62,8 +62,14 @@ description="接口自动化测试框架",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 生成 API 模板
+  # 生成 API 模板（默认 xlsx）
   python main.py generate
+
+  # 生成 YAML 模板
+  python main.py generate --format yaml
+
+  # 生成 CSV 模板到指定路径
+  python main.py generate --format csv -o data/api/用例.csv
 
   # 运行 API 测试
   python main.py run
@@ -79,8 +85,10 @@ description="接口自动化测试框架",
     subparsers = parser.add_subparsers(dest="command", help="子命令")
 
     # generate 子命令
-    gen_parser = subparsers.add_parser("generate", help="生成 Excel 测试用例模板")
+    gen_parser = subparsers.add_parser("generate", help="生成多格式测试用例模板（xlsx/csv/json/yaml）")
     gen_parser.add_argument("--output", "-o", default=None, help="输出路径")
+    gen_parser.add_argument("--format", "-f", default="xlsx", choices=["xlsx", "csv", "json", "yaml"],
+                            help="输出格式（默认 xlsx）")
     gen_parser.set_defaults(func=cmd_generate)
 
     # run 子命令

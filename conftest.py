@@ -49,6 +49,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "p0: P0 优先级")
     config.addinivalue_line("markers", "p1: P1 优先级")
     config.addinivalue_line("markers", "p2: P2 优先级")
+    config.addinivalue_line("markers", "p3: P3 优先级")
 
     # 日志配置已统一由 utils/logger.py 的 LoggerSetup.setup() 管理
     # 此处仅做标记注册，不再重复调用 logger.add()

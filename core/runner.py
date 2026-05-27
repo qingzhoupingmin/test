@@ -46,7 +46,17 @@ class TestRunner:
         file_path: str,
         sheet_name: Optional[str] = None,
     ) -> List[Any]:
-        """加载 Excel 文件中的所有用例并解析为模型对象（向后兼容）"""
+        """加载 Excel 文件中的所有用例并解析为模型对象（向后兼容）
+
+        .. deprecated:: 2.0
+            请使用 :func:`load_cases_from_file` 代替。
+        """
+        import warnings
+        warnings.warn(
+            "load_cases_from_excel 已弃用，请使用 load_cases_from_file",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.load_cases_from_file(file_path, sheet_name)
 
     def load_cases_from_directory(
