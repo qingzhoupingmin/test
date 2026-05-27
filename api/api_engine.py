@@ -80,14 +80,15 @@ class ApiTestEngine:
             with allure.step(f"发送 {case.method} 请求"):
                 start_time = time.time()
                 try:
+                    request_kwargs, resolved_headers = self._build_request_kwargs(
+                        resolved_body, case.payload_type, resolved_headers, upload_files
+                    )
                     response = self.session.request(
                         method=case.method,
                         url=resolved_url,
                         params=resolved_params,
-                        json=resolved_body if isinstance(resolved_body, dict) else None,
-                        data=resolved_body if isinstance(resolved_body, str) else None,
                         headers=resolved_headers,
-                        files=upload_files,
+                        **request_kwargs,
                     )
                     status_code = response.status_code
                 except Exception as e:
@@ -132,7 +133,7 @@ class ApiTestEngine:
                 error_message=error_message,
                 response_time_ms=elapsed_ms,
                 status_code=status_code,
-                response_body=response.json() if response and response.ok else None,
+                response_body=(response.json() if response.ok else response.text) if response else None,
                 extract_vars=extract_vars,
             )
 
@@ -202,6 +203,80 @@ class ApiTestEngine:
         return results
 
     # =================== 内部方法 ===================
+
+    @staticmethod
+    def _build_request_kwargs(
+        body: Any,
+        payload_type: Optional[str],
+        headers: Dict[str, str],
+        files: Optional[Dict[str, Any]],
+    ) -> tuple:
+        """根据 payload_type 构建 requests.request 所需的关键字参数。
+
+        处理五种 payload 类型：
+        - JSON:       json=body (body 为 dict 或 list，自动设 Content-Type: application/json)
+        - FORM:       data=body (body 为 dict，requests 自动编码为 application/x-www-form-urlencoded)
+        - XML:        data=body (body 为 str，设置 Content-Type: application/xml)
+        - MULTIPART:  data=body, files=files (body 为 dict 时传表单字段)
+        - None/默认:  自动推断 body 类型 (dict/list→json, str→data)
+
+        Args:
+            body: 解析后的请求体
+            payload_type: 请求体类型（JSON/FORM/XML/MULTIPART），None 时自动推断
+            headers: 已解析的请求头字典（会被原地修改以添加 Content-Type）
+            files: 文件上传参数字典
+
+        Returns:
+            (kwargs_dict, headers_dict) 传入 self.session.request(**kwargs)
+        """
+        pt = (payload_type or "").strip().upper()
+        kwargs = {}
+        if files:
+            kwargs["files"] = files
+
+        if body is None or body == "":
+            return kwargs, headers
+
+        if pt == "JSON":
+            # JSON 请求体：支持 dict 和 list 类型
+            if isinstance(body, (dict, list)):
+                kwargs["json"] = body
+            elif isinstance(body, str):
+                try:
+                    kwargs["json"] = json.loads(body)
+                except json.JSONDecodeError:
+                    kwargs["data"] = body
+            else:
+                kwargs["json"] = body
+        elif pt == "FORM":
+            # x-www-form-urlencoded
+            if isinstance(body, dict):
+                kwargs["data"] = body
+            elif isinstance(body, str):
+                kwargs["data"] = body
+            else:
+                kwargs["data"] = body
+        elif pt == "XML":
+            headers["Content-Type"] = "application/xml"
+            kwargs["data"] = body if isinstance(body, str) else str(body)
+        elif pt == "MULTIPART":
+            # multipart/form-data：body 为 dict 时传 data，有 files 则一起
+            if isinstance(body, dict):
+                kwargs["data"] = body
+            elif isinstance(body, str):
+                kwargs["data"] = body
+            elif body is not None:
+                kwargs["data"] = body
+        else:
+            # 自动推断
+            if isinstance(body, (dict, list)):
+                kwargs["json"] = body
+            elif isinstance(body, str):
+                kwargs["data"] = body
+            elif body is not None:
+                kwargs["data"] = body
+
+        return kwargs, headers
 
     def _resolve_variables(self, value: Any) -> Any:
         """递归替换值中的 {{var_name}} 占位符"""

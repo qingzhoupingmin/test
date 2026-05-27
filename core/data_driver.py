@@ -87,9 +87,9 @@ class DataDriver:
         def replacer(obj):
             if isinstance(obj, str):
                 def _sub(match):
-                    key = match.group(1)
+                    key = match.group(1) or match.group(2)
                     return str(params.get(key, match.group(0)))
-                return re.sub(r"\{\{(\w+)\}\}", _sub, obj)
+                return re.sub(r"\{\{(\w+)\}\}|\$\{(\w+)\}", _sub, obj)
             if isinstance(obj, dict):
                 return {k: replacer(v) for k, v in obj.items()}
             if isinstance(obj, list):

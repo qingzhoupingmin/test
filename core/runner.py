@@ -63,16 +63,18 @@ class TestRunner:
         self,
         directory: str,
         patterns: Optional[List[str]] = None,
+        raw_mode: bool = False,
     ) -> List[Any]:
         """从目录递归加载所有支持的用例文件
 
         Args:
             directory: 目录路径
             patterns: 文件匹配模式列表，默认支持 xlsx/xls/csv/json/yaml/yml
+            raw_mode: 是否保留原始值（不调用 to_string），适用于 JSON/YAML 模板变量
         Returns:
             解析后的用例模型列表
         """
-        rows = FileReader.read_directory(directory, patterns)
+        rows = FileReader.read_directory(directory, patterns, raw_mode=raw_mode)
         cases = []
         for row in rows:
             parsed = CaseParser.parse_multi(row)
