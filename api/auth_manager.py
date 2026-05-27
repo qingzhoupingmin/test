@@ -109,13 +109,30 @@ class OAuth2PasswordAuth(AuthBase):
         }
         if self.scope:
             payload["scope"] = self.scope
-        resp = req.post(self.token_url, data=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        self._expires_at = time.time() + data.get("expires_in", 3600) - 60  # 提前 60s 刷新
-        self._token = data["access_token"]
-        logger.info("OAuth2 token 获取成功，过期时间: {} 秒", data.get("expires_in", 3600))
-        return self._token
+        try:
+            resp = req.post(self.token_url, data=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            if "access_token" not in data:
+                raise ValueError(f"Token 端点返回数据缺少 access_token 字段: {data}")
+            self._expires_at = time.time() + data.get("expires_in", 3600) - 60  # 提前 60s 刷新
+            self._token = data["access_token"]
+            logger.info("OAuth2 token 获取成功，过期时间: {} 秒", data.get("expires_in", 3600))
+            return self._token
+        except req.ConnectionError as e:
+            logger.error("OAuth2 Token 端点不可达: {} | {}", self.token_url, e)
+            raise RuntimeError(f"OAuth2 Token 端点不可达: {self.token_url}") from e
+        except req.Timeout as e:
+            logger.error("OAuth2 Token 端点超时: {} | {}", self.token_url, e)
+            raise RuntimeError(f"OAuth2 Token 端点超时: {self.token_url}") from e
+        except req.HTTPError as e:
+            logger.error("OAuth2 Token 端点返回错误: {} | status={} | body={}",
+                         self.token_url, e.response.status_code if e.response is not None else "?", 
+                         e.response.text[:200] if e.response is not None and e.response.text else "")
+            raise RuntimeError(f"OAuth2 鉴权失败 (HTTP {e.response.status_code if e.response is not None else '?'}): {self.token_url}") from e
+        except Exception as e:
+            logger.error("OAuth2 Token 获取失败: {} | {}", self.token_url, e)
+            raise RuntimeError(f"OAuth2 Token 获取异常: {e}") from e
 
     def apply(self, request: Request, context=None) -> Request:
         if self._token is None or time.time() > self._expires_at:

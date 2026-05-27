@@ -97,11 +97,16 @@ def api_session(global_config):
     base_url = global_config.get("base_url", "")
     timeout_cfg = global_config.get("timeout", {})
     retry_cfg = global_config.get("retry", {})
+    # retry 语义统一：config 中 max_attempts 表示总尝试次数，
+    # SessionManager.retry 表示额外重试次数（总次数 = retry + 1）
+    max_attempts = retry_cfg.get("max_attempts", 1) if isinstance(retry_cfg, dict) else 1
+    extra_retry = max(max_attempts - 1, 0)
+    retry_delay = retry_cfg.get("delay", 1000) / 1000.0 if isinstance(retry_cfg, dict) else 1.0
     session = SessionManager(
         base_url=base_url,
         timeout=timeout_cfg.get("http_request", 30) if isinstance(timeout_cfg, dict) else 30,
-        retry=retry_cfg.get("max_attempts", 0) if isinstance(retry_cfg, dict) else 0,
-        retry_delay=retry_cfg.get("delay", 1000) / 1000.0 if isinstance(retry_cfg, dict) else 1.0,
+        retry=extra_retry,
+        retry_delay=retry_delay,
     )
     yield session
     session.close()

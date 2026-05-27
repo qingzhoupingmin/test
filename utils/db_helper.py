@@ -120,6 +120,20 @@ class DBHelper:
     def redis(self) -> Optional[RedisHelper]:
         return self._redis
 
+    # ── 委托方法：供 AssertionEngine 直接调用 ──
+
+    def query_one(self, sql: str, params: tuple = None) -> Optional[Dict]:
+        """查询单行（委托给 MySQLHelper），供 DB 断言使用"""
+        if self._mysql is None:
+            raise RuntimeError("MySQL 未配置，无法执行 query_one")
+        return self._mysql.query_one(sql, params)
+
+    def query_all(self, sql: str, params: tuple = None) -> List[Dict]:
+        """查询多行（委托给 MySQLHelper）"""
+        if self._mysql is None:
+            raise RuntimeError("MySQL 未配置，无法执行 query_all")
+        return self._mysql.query_all(sql, params)
+
     def close(self) -> None:
         if self._mysql:
             self._mysql.close()

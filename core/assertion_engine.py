@@ -64,7 +64,7 @@ class AssertionEngine:
             return self._assert_status_code(response, assertion.value, ctx)
 
         elif atype == "jsonpath":
-            return self._assert_jsonpath(response, assertion.key, assertion.value)
+            return self._assert_jsonpath(response, assertion.key, assertion.value, assertion.not_null)
 
         elif atype == "contains":
             return self._assert_contains(response, assertion.value)
@@ -73,13 +73,16 @@ class AssertionEngine:
             return self._assert_response_time(response_time_ms, assertion.max_ms)
 
         elif atype == "header":
-            return self._assert_header(response, assertion.key, assertion.value)
+            return self._assert_header(response, assertion.key, assertion.value, assertion.not_null)
 
         elif atype == "schema":
             return self._assert_schema(response, assertion.value)
 
         elif atype == "db":
-            return self._assert_db(assertion.query, assertion.value)
+            return self._assert_db(assertion.query, assertion.value, assertion.not_null)
+
+        elif atype == "not_null":
+            return self._assert_not_null(response, assertion.key)
 
         # ===== UI 断言 =====
         elif atype in ("element_visible", "text_equals", "url_contains", "page_title"):
@@ -104,18 +107,28 @@ class AssertionEngine:
             logger.error("状态码断言失败: 期望={}, 实际={}", expected, actual)
         return passed
 
-    def _assert_jsonpath(self, response, key: str, expected_value: Any) -> bool:
+    def _assert_jsonpath(self, response, key: str, expected_value: Any, not_null: bool = False) -> bool:
         if response is None:
             logger.error("响应为空，无法执行 jsonpath 断言")
             return False
         try:
             body = response.json() if hasattr(response, "json") else response
+        except Exception as e:
+            logger.error("响应体 JSON 解析失败，无法执行 jsonpath 断言 (key={}): {}", key, e)
+            return False
+        try:
             expr = jsonpath_ng.parse(key)
             matches = [m.value for m in expr.find(body)]
             if not matches:
                 logger.error("jsonpath 未匹配到值: {}", key)
                 return False
             actual = matches[0]
+            # not_null 断言：仅验证值存在且非空
+            if not_null:
+                if actual is None:
+                    logger.error("jsonpath not_null 断言失败: key={} 的值为 None", key)
+                    return False
+                return True
             # 期望值为空/None 时，仅验证 key 存在即可
             if expected_value in (None, "", ''):
                 return True
@@ -124,7 +137,7 @@ class AssertionEngine:
                 logger.error("jsonpath 断言失败: key={}, 期望={}, 实际={}", key, expected_value, actual)
             return passed
         except Exception as e:
-            logger.error("jsonpath 解析失败: {} | {}", key, str(e))
+            logger.error("jsonpath 表达式解析/执行失败: expr={} | {}", key, str(e))
             return False
 
     def _assert_contains(self, response, expected_value: str) -> bool:
@@ -144,10 +157,15 @@ class AssertionEngine:
             logger.error("响应时间超限: {}ms > {}ms", response_time_ms, max_ms)
         return passed
 
-    def _assert_header(self, response, key: str, expected_value: Any) -> bool:
+    def _assert_header(self, response, key: str, expected_value: Any, not_null: bool = False) -> bool:
         if response is None:
             return False
         actual = response.headers.get(key)
+        if not_null:
+            if actual is None:
+                logger.error("Header not_null 断言失败: 响应头 {} 不存在", key)
+                return False
+            return True
         passed = str(actual) == str(expected_value)
         if not passed:
             logger.error("Header 断言失败: key={}, 期望={}, 实际={}", key, expected_value, actual)
@@ -167,7 +185,7 @@ class AssertionEngine:
             logger.error("Schema 校验异常: {}", str(e))
             return False
 
-    def _assert_db(self, query: str, expected_value: Any) -> bool:
+    def _assert_db(self, query: str, expected_value: Any, not_null: bool = False) -> bool:
         if self.db_helper is None:
             logger.warning("DB Helper 未配置，跳过 DB 断言")
             return False
@@ -178,6 +196,11 @@ class AssertionEngine:
                 return False
             # 取第一个字段值
             actual = list(result.values())[0] if result else None
+            if not_null:
+                if actual is None:
+                    logger.error("DB not_null 断言失败: {} 查询结果为 None", query)
+                    return False
+                return True
             passed = self._values_match(actual, expected_value)
             if not passed:
                 logger.error("DB 断言失败: SQL={}, 期望={}, 实际={}", query, expected_value, actual)
@@ -220,6 +243,32 @@ class AssertionEngine:
             msg = f"{assertion.comment}: {str(e)}"
             self._soft_failures.append(msg)
             return True
+
+    def _assert_not_null(self, response, key: str) -> bool:
+        """独立 not_null 断言：通过 jsonpath 验证响应中的字段值非空"""
+        if response is None:
+            logger.error("not_null 断言：响应为空")
+            return False
+        try:
+            body = response.json() if hasattr(response, "json") else response
+        except Exception as e:
+            logger.error("not_null 断言：响应体 JSON 解析失败 (key={}): {}", key, e)
+            return False
+        try:
+            expr = jsonpath_ng.parse(key)
+            matches = [m.value for m in expr.find(body)]
+            if not matches:
+                logger.error("not_null 断言失败: jsonpath {} 未匹配到值", key)
+                return False
+            actual = matches[0]
+            if actual is None:
+                logger.error("not_null 断言失败: jsonpath {} 匹配值为 None", key)
+                return False
+            logger.debug("not_null 断言通过: {} = {}", key, actual)
+            return True
+        except Exception as e:
+            logger.error("not_null 断言：jsonpath 表达式解析/执行失败: expr={} | {}", key, str(e))
+            return False
 
     # ------------------- 辅助方法 -------------------
 

@@ -9,6 +9,7 @@ from loguru import logger
 
 from core.file_reader import FileReader
 from core.case_parser import CaseParser
+from core.dependency_resolver import CaseDependencyResolver
 from core.models import ApiCaseModel
 
 
@@ -73,7 +74,24 @@ _ALL_CASES, _CASE_MAP = _parse_all_api_cases()
 
 
 def _resolve_dependency_chain(case: ApiCaseModel) -> List[ApiCaseModel]:
-    """解析依赖链，返回按依赖顺序排列的用例列表（前置依赖在前）"""
+    """解析依赖链，返回按依赖顺序排列的用例列表（前置依赖在前）
+
+    先通过 CaseDependencyResolver 检测循环依赖，避免静默错误。
+    """
+    # 构建当前涉及的子图（目标用例 + 其所有上游依赖）
+    all_case_ids = {case.case_id}
+    queue = [case]
+    while queue:
+        cur = queue.pop(0)
+        if cur.depends_on and cur.depends_on in _CASE_MAP and cur.depends_on not in all_case_ids:
+            all_case_ids.add(cur.depends_on)
+            queue.append(_CASE_MAP[cur.depends_on])
+
+    # 检测子图内是否存在循环依赖
+    if len(all_case_ids) > 1:
+        sub_cases = [_CASE_MAP[cid] for cid in all_case_ids if cid in _CASE_MAP]
+        CaseDependencyResolver.resolve(sub_cases)
+
     chain = []
     visited = set()
 
